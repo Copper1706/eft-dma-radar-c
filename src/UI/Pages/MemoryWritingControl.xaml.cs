@@ -550,7 +550,7 @@ namespace eft_dma_radar.UI.Pages
             var memWrites = MemWrites.Enabled;
             var enableControl = memWrites && MemWrites.Config.NoRecoil;
 
-            chkNoRecoil.IsEnabled = memWrites;
+            chkNoRecoil.IsEnabled = false;
             btnNoRecoilConfig.IsEnabled = enableControl;
             sldrNoRecoilAmt.IsEnabled = enableControl;
             sldrNoSwayAmt.IsEnabled = enableControl;

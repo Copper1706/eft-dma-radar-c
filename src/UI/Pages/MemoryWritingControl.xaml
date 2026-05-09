@@ -310,10 +310,11 @@
                                         <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
 
-                                    <CheckBox x:Name="chkNoRecoil" Content="No Recoil" 
+                                    <CheckBox x:Name="chkNoRecoil" Content="No Recoil (Disabled - detected)" 
                                               Style="{StaticResource DynamicCheckBoxStyle}" 
                                               Grid.Column="0" Tag="NoRecoil"
-                                              VerticalAlignment="Center"/>
+                                              VerticalAlignment="Center"
+                                              IsEnabled="False"/>
 
                                     <Button x:Name="btnNoRecoilConfig" Tag="NoRecoilPanel"
                                             Style="{StaticResource ButtonIcon}"
