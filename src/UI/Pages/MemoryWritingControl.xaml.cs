@@ -1241,27 +1241,9 @@ namespace eft_dma_radar.UI.Pages
             /// </summary>
             public static MemoryWritingDecision ShowMemoryWritingConfirmation(bool hasBasicMemWrites)
             {
-                return Application.Current.Dispatcher.Invoke(() =>
-                {
-                    if (!hasBasicMemWrites)
-                        return MemoryWritingDecision.KeepCurrent;
-
-                    var basicResult = MessageBox.Show(
-                        "⚠️ MEMORY WRITING DETECTED ⚠️\n\n" +
-                        "The configuration you're importing has Memory Writing features enabled.\n\n" +
-                        "Memory writing features include:\n" +
-                        "• Aimbot, No Recoil, Infinite Stamina\n" +
-                        "• Movement modifications (Speed, No Inertia, etc.)\n" +
-                        "• Visual modifications (Night Vision, etc.)\n" +
-                        "• And other game modifications\n\n" +
-                        "⚠️ WARNING: These features carry increased detection risk!\n\n" +
-                        "Do you want to enable Memory Writing features?",
-                        "Memory Writing Configuration",
-                        MessageBoxButton.YesNo,
-                        MessageBoxImage.Warning);
-
-                    return basicResult == MessageBoxResult.Yes ? MemoryWritingDecision.EnableBasicOnly : MemoryWritingDecision.DisableAll;
-                });
+                return hasBasicMemWrites
+                    ? MemoryWritingDecision.EnableBasicOnly
+                    : MemoryWritingDecision.KeepCurrent;
             }
 
             /// <summary>
@@ -1304,24 +1286,7 @@ namespace eft_dma_radar.UI.Pages
         /// </summary>
         public bool ConfirmMemoryWritingEnable()
         {
-            return Dispatcher.Invoke(() =>
-            {
-                var result = MessageBox.Show(
-                    "⚠️ ENABLING MEMORY WRITING ⚠️\n\n" +
-                    "You are about to enable Memory Writing features.\n\n" +
-                    "Memory writing features include:\n" +
-                    "• Aimbot, No Recoil, Infinite Stamina\n" +
-                    "• Movement modifications (Speed, No Inertia, etc.)\n" +
-                    "• Visual modifications (Night Vision, etc.)\n" +
-                    "• And other game modifications\n\n" +
-                    "⚠️ WARNING: These features carry increased detection risk!\n\n" +
-                    "Are you sure you want to enable Memory Writing?",
-                    "Memory Writing Warning",
-                    MessageBoxButton.YesNo,
-                    MessageBoxImage.Warning);
-
-                return result == MessageBoxResult.Yes;
-            });
+            return true;
         }
         #endregion
     }
