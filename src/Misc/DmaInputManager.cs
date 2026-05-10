@@ -28,12 +28,58 @@ namespace eft_dma_radar.Misc
                 throw new Exception("DmaInputManager: failed to get winlogon.exe PID");
 
             int buildNumber = GetWindowsBuildNumber();
-            _gafAsyncKeyState = buildNumber >= 22000
-                ? ResolveWin11KeyState()
-                : ResolveWin10KeyState();
+            _gafAsyncKeyState = ResolveKeyStateWithFallback(buildNumber);
 
             if (_gafAsyncKeyState == 0)
                 throw new Exception("DmaInputManager: failed to resolve gafAsyncKeyState");
+        }
+
+        private ulong ResolveKeyStateWithFallback(int buildNumber)
+        {
+            var errors = new List<string>();
+
+            if (buildNumber >= 22000)
+            {
+                try
+                {
+                    return ResolveWin11KeyState();
+                }
+                catch (Exception ex)
+                {
+                    errors.Add($"Win11 path failed: {ex.Message}");
+                }
+
+                try
+                {
+                    return ResolveWin10KeyState();
+                }
+                catch (Exception ex)
+                {
+                    errors.Add($"Win10 fallback failed: {ex.Message}");
+                }
+            }
+            else
+            {
+                try
+                {
+                    return ResolveWin10KeyState();
+                }
+                catch (Exception ex)
+                {
+                    errors.Add($"Win10 path failed: {ex.Message}");
+                }
+
+                try
+                {
+                    return ResolveWin11KeyState();
+                }
+                catch (Exception ex)
+                {
+                    errors.Add($"Win11 fallback failed: {ex.Message}");
+                }
+            }
+
+            throw new Exception($"DmaInputManager: key state resolution failed. {string.Join(" | ", errors)}");
         }
 
         /// <summary>

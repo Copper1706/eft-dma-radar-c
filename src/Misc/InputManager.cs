@@ -18,10 +18,16 @@ namespace eft_dma_radar.Common.Misc
         private static Vmm _hVMM;
         private static DmaInputManager _vmmInput;
 
+        private static readonly object _initLock = new();
+        private static volatile bool _workerStarted = false;
+        private static DateTime _nextInitRetryUtc = DateTime.MinValue;
+        private static bool _initFailureNotified = false;
+
         private static int _initAttempts = 0;
         private const int MAX_ATTEMPTS = 3;
         private const int DELAY = 500;
         private const int KEY_CHECK_DELAY = 100; // in milliseconds
+        private const int MAX_RETRY_DELAY_MS = 5000;
 
         private static readonly Dictionary<int, DateTime> _lastKeyTapTime = new();
         private static readonly Dictionary<int, bool> _heldStates = new();
@@ -47,6 +53,8 @@ namespace eft_dma_radar.Common.Misc
         {
             try
             {
+                _safeMode = false;
+
                 if (MemoryInterface.Memory?.VmmHandle == null)
                 {
                     _safeMode = true;
@@ -57,22 +65,23 @@ namespace eft_dma_radar.Common.Misc
 
                 _hVMM = MemoryInterface.Memory.VmmHandle;
 
-                if (_hVMM != null)
+                if (_hVMM != null && !_workerStarted)
                 {
+                    _workerStarted = true;
                     new Thread(Worker)
                     {
                         IsBackground = true
                     }.Start();
                 }
 
-                if (InputManager.InitKeyboard())
+                if (TryInitializeKeyboard())
                 {
                     Log.WriteLine("[InputManager] Initialized");
                     NotificationsShared.Success("[InputManager] Initialized successfully!");
                 }
                 else
                 {
-                    Log.WriteLine("ERROR Initializing Input Manager");
+                    Log.WriteLine("[InputManager] Initial initialization failed; background retry loop started.");
                     NotificationsShared.Error("[InputManager] Failed to initialize, you may need to restart your gaming pc for hotkeys to work.");
                 }
             }
@@ -84,29 +93,58 @@ namespace eft_dma_radar.Common.Misc
             }
         }
 
-        private static bool InitKeyboard()
+        private static bool TryInitializeKeyboard()
         {
-            if (_initialized)
-                return true;
+            lock (_initLock)
+            {
+                if (_initialized)
+                    return true;
 
-            if (_safeMode || _hVMM == null)
-            {
-                Log.WriteLine("[InputManager] Skipping keyboard initialization - Safe Mode");
-                return false;
-            }
+                if (_safeMode || _hVMM == null)
+                {
+                    Log.WriteLine("[InputManager] Skipping keyboard initialization - Safe Mode");
+                    return false;
+                }
 
-            try
-            {
-                _vmmInput = new DmaInputManager(_hVMM);
-                _initialized = true;
-                ReadyChanged?.Invoke(null, EventArgs.Empty);
-                return true;
-            }
-            catch (Exception ex)
-            {
-                Log.WriteLine($"Error initializing keyboard: {ex.Message}\n{ex.StackTrace}");
-                _initAttempts++;
-                return false;
+                var now = DateTime.UtcNow;
+                if (_nextInitRetryUtc > now)
+                    return false;
+
+                try
+                {
+                    _vmmInput = new DmaInputManager(_hVMM);
+                    _initialized = true;
+                    _initAttempts = 0;
+                    _nextInitRetryUtc = DateTime.MinValue;
+
+                    if (_initFailureNotified)
+                    {
+                        _initFailureNotified = false;
+                        NotificationsShared.Success("[InputManager] Input recovered and hotkeys are available again.");
+                    }
+
+                    ReadyChanged?.Invoke(null, EventArgs.Empty);
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    _initialized = false;
+                    _vmmInput = null;
+                    _initAttempts++;
+
+                    var retryDelayMs = Math.Min(MAX_RETRY_DELAY_MS, (int)(Math.Pow(2, Math.Min(_initAttempts, 6)) * DELAY));
+                    _nextInitRetryUtc = DateTime.UtcNow.AddMilliseconds(retryDelayMs);
+
+                    Log.WriteLine($"[InputManager] Init attempt {_initAttempts} failed: {ex.Message}. Retrying in {retryDelayMs}ms.");
+
+                    if (_initAttempts >= MAX_ATTEMPTS && !_initFailureNotified)
+                    {
+                        _initFailureNotified = true;
+                        NotificationsShared.Warning("[InputManager] Input bridge not ready yet. Keeping retry loop active.");
+                    }
+
+                    return false;
+                }
             }
         }
 
@@ -117,7 +155,15 @@ namespace eft_dma_radar.Common.Misc
 
             Array.Copy(_currentStateBitmap, _previousStateBitmap, 64);
 
-            _vmmInput.UpdateKeys();
+            try
+            {
+                _vmmInput.UpdateKeys();
+            }
+            catch (Exception ex)
+            {
+                MarkInputAsDisconnected($"UpdateKeys failed: {ex.Message}");
+                return;
+            }
 
             _pressedKeys.Clear();
 
@@ -373,8 +419,14 @@ namespace eft_dma_radar.Common.Misc
                     if (MemoryInterface.Memory is { IsDisposed: true })
                         break;
 
-                    if (!_safeMode && MemDMABase.WaitForProcess())
-                        UpdateKeys();
+                    if (!_safeMode)
+                    {
+                        if (!_initialized)
+                            TryInitializeKeyboard();
+
+                        if (_initialized && MemDMABase.WaitForProcess())
+                            UpdateKeys();
+                    }
                 }
                 catch (ObjectDisposedException)
                 {
@@ -391,6 +443,20 @@ namespace eft_dma_radar.Common.Misc
             }
 
             Log.WriteLine("[InputManager] Worker thread exiting.");
+        }
+
+        private static void MarkInputAsDisconnected(string reason)
+        {
+            lock (_initLock)
+            {
+                if (!_initialized)
+                    return;
+
+                _initialized = false;
+                _vmmInput = null;
+                _nextInitRetryUtc = DateTime.UtcNow;
+                Log.WriteLine($"[InputManager] Input disconnected: {reason}. Reconnect loop active.");
+            }
         }
 
         private class KeyActionHandler
